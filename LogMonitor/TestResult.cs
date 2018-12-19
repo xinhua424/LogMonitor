@@ -219,6 +219,7 @@ namespace LogMonitor
 
         public void CrunchStatData()
         {
+            //minor-branch-1
             Max = Values.Max();
             Min = Values.Min();
             MaxMinusMin = Max - Min;
