@@ -32,7 +32,7 @@ namespace LogMonitor
             InitializeComponent();
 
             toolStripComboBox_ProjectStationSelection.Items.AddRange(ProductStation.CollectSupportedStations());
-            toolStripComboBox_ProjectStationSelection.SelectedIndex = 0;
+            toolStripComboBox_ProjectStationSelection.SelectedIndex = (int)(ProductStation.Station.Jaguar_FCT);
 
             MakeDataTable();
         }
@@ -71,7 +71,7 @@ namespace LogMonitor
             string[] sRows = System.IO.File.ReadAllLines(spath);
             try
             {
-                saResponseNames = sRows[0].Split(',');
+                saResponseNames = sRows[0].Trim(',').Split(',');
                 if (this.productStation.station.ToString().Contains("Bebop"))
                 {
                     saUpperLimits = sRows[1].Split(',');
@@ -154,15 +154,14 @@ namespace LogMonitor
 
                 for (int rownum = 4; rownum < sRows.Length; rownum++)
                 {
-                    string[] saResponseValues = sRows[rownum].Split(',');
+                    string[] saResponseValues = sRows[rownum].Trim(',').Split(',');
                     TestResult.ResultType rt;
                     for (int resnum = iFirstMeasurementIndex; resnum < saResponseValues.Length; resnum++)
                     {
                         string sResult = saResponseValues[resnum];
                         if (sResult == "")
                         {
-                            //continue;
-                            Results[resnum].AddValue(double.NaN);
+                            //Results[resnum].AddValue(double.NaN);
                             rt = TestResult.ResultType.Null;
                         }
                         else
@@ -182,12 +181,14 @@ namespace LogMonitor
                                 }
                                 else
                                 {
-                                    Results[resnum].AddValue(double.NaN);
+                                    //The result may be a string.
+                                    //Results[resnum].AddValue(double.NaN);
                                     rt = TestResult.ResultType.String;
                                 }
                             }
-                            Results[resnum].type = rt;
                         }
+                        Results[resnum].type = rt;
+
                         string sTSRID;
                         if(this.productStation.station.ToString().Contains("Bebop"))
                         {
@@ -565,37 +566,73 @@ namespace LogMonitor
 
         private void exportResultTableForJMPAnalysisToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if(Results.Count!=0)
+            if (Results.Count != 0)
             {
-                MakeMSATable(true);
+                SaveFileDialog saveFileDialog1 = new SaveFileDialog();
+                saveFileDialog1.Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*";
+                saveFileDialog1.Title = "Save an csv File for statistic analysis";
+                saveFileDialog1.ShowDialog();
+
+                // If the file name is not an empty string open it for saving.  
+                if (saveFileDialog1.FileName != "")
+                {
+                    DataTable dt = MakeMSATable(true);
+
+                    StringBuilder csv = new StringBuilder();
+                    IEnumerable<string> columnNames = dt.Columns.Cast<DataColumn>().Select(column => column.ColumnName);
+                    csv.AppendLine(string.Join(",", columnNames));
+
+                    foreach (DataRow row in dt.Rows)
+                    {
+                        IEnumerable<string> fields = row.ItemArray.Select(field => field.ToString());
+                        csv.AppendLine(string.Join(",", fields));
+                    }
+
+                    File.WriteAllText(saveFileDialog1.FileName, csv.ToString());
+                    MessageBox.Show("Export the MSA table for statistic analysis successfully.");
+                }
             }
         }
 
-        private void MakeMSATable(bool bIgnoreItemsWithoutLimit)
+        private DataTable MakeMSATable(bool bIgnoreItemsWithoutLimit)
         {
             dtMSATable = new DataTable();
-            dtMSATable.Columns.Add("TesterName");
-            dtMSATable.Columns.Add("SerialNumber");
-            foreach (var v in Results)
-            {
-                dtMSATable.Columns.Add(v.Value.VariationName);
-                dtMSATable.Columns[v.Value.VariationName].DataType = typeof(double);
-            }
-
             List<int> lDesiredColumns = new List<int>();
+
+            dtMSATable.Columns.Add("TesterName");
+            dtMSATable.Columns.Add("Slot");
+            dtMSATable.Columns.Add("SerialNumber");
+            dtMSATable.Columns["TesterName"].DataType = typeof(string);
+            dtMSATable.Columns["Slot"].DataType = typeof(string);
+            dtMSATable.Columns["SerialNumber"].DataType = typeof(string);
             foreach (var v in Results)
             {
-                // Get the column numbers where the data is continous.
-                if (v.Value.type == TestResult.ResultType.Continous)
+                if (v.Value.type == TestResult.ResultType.Continous || v.Value.type == TestResult.ResultType.Hex)
                 {
+                    if(v.Value.LowerLimitInfinit && v.Value.UpperLimitInfinit && bIgnoreItemsWithoutLimit)
+                    {
+                        continue;
+                    }
+                    dtMSATable.Columns.Add(v.Value.VariationName);
+                    dtMSATable.Columns[v.Value.VariationName].DataType = typeof(double);
                     lDesiredColumns.Add(v.Key);
                 }
             }
-            
-            
 
+            for (int i=0;i<Results.First().Value.DiResponseDetails.Count;i++)
+            {
+                DataRow row = dtMSATable.NewRow();
+                row["TesterName"] = Results.First().Value.DiResponseDetails[i].testerName;
+                row["Slot"] = Results.First().Value.DiResponseDetails[i].positionName;
+                row["SerialNumber"] = Results.First().Value.DiResponseDetails[i].serialNumber;
+                for (int j=0;j<lDesiredColumns.Count;j++)
+                {
+                    row[j + 3] = Results[lDesiredColumns[j]].DiResponseDetails[i].value;
+                }
+                dtMSATable.Rows.Add(row);
+            }
 
-
+            return dtMSATable;
         }
     }
 
@@ -631,17 +668,41 @@ namespace LogMonitor
                         this.sOperatorIDKeyword = "OPID";
                         this.sFirstMeasurementName = "Open_LoadBoard";
                         break;
-                    case Station.Jagwar_SFG:
-                    case Station.Jagwar_Plus_SFG:
+                    case Station.Jaguar_FCT:
+                    case Station.Jaguar_Plus_FCT:
                         this.sSerialNumberKeyword = "uut_sn";
                         this.sTestSuiteRunIDKeyword = "";
-                        this.sTesterNameKeyword = "tester_id";
+                        this.sTesterNameKeyword = "execution_id";
                         this.sStationIDKeyword = "phase_id";
                         this.sLineIDKeyword = "line_id";
                         this.sPositionIDKeyword = "position_id";
                         this.sTestSuiteVersionKeyword = "test_sw_version";
                         this.sOperatorIDKeyword = "operator_id";
-                        this.sFirstMeasurementName = "charging_ch1_ch2_on_current";
+                        this.sFirstMeasurementName = "standby_current_w_pcm";
+                        break;
+                    case Station.Jaguar_SFG:
+                    case Station.Jaguar_Plus_SFG:
+                        this.sSerialNumberKeyword = "uut_sn";
+                        this.sTestSuiteRunIDKeyword = "";
+                        this.sTesterNameKeyword = "execution_id";
+                        this.sStationIDKeyword = "phase_id";
+                        this.sLineIDKeyword = "line_id";
+                        this.sPositionIDKeyword = "position_id";
+                        this.sTestSuiteVersionKeyword = "test_sw_version";
+                        this.sOperatorIDKeyword = "operator_id";
+                        this.sFirstMeasurementName = "standby_current_w_pcm";
+                        break;
+                    case Station.Jaguar_FG:
+                    case Station.Jaguar_Plus_FG:
+                        this.sSerialNumberKeyword = "uut_sn";
+                        this.sTestSuiteRunIDKeyword = "";
+                        this.sTesterNameKeyword = "execution_id";
+                        this.sStationIDKeyword = "phase_id";
+                        this.sLineIDKeyword = "line_id";
+                        this.sPositionIDKeyword = "position_id";
+                        this.sTestSuiteVersionKeyword = "test_sw_version";
+                        this.sOperatorIDKeyword = "operator_id";
+                        this.sFirstMeasurementName = "standby_current_w_pcm";
                         break;
                     default:
                         break;
@@ -657,10 +718,12 @@ namespace LogMonitor
         {
             Bebop_SFG = 0,
             Bebop_FG = 1,
-            Jagwar_SFG = 2,
-            Jagwar_FG = 3,
-            Jagwar_Plus_SFG = 4,
-            Jagwar_Plus_FG = 5,
+            Jaguar_FCT=2,
+            Jaguar_SFG = 3,
+            Jaguar_FG = 4,
+            Jaguar_Plus_FCT=5,
+            Jaguar_Plus_SFG = 6,
+            Jaguar_Plus_FG = 7,
         }
 
         public static string[] CollectSupportedStations()

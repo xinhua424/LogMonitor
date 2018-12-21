@@ -219,12 +219,13 @@ namespace LogMonitor
 
         public void CrunchStatData()
         {
-            //minor-branch-1
-            Max = Values.Max();
-            Min = Values.Min();
+            List<double> NotNaNValues = new List<double>(Values.Where(d => d != double.NaN));
+
+            Max = NotNaNValues.Max();
+            Min = NotNaNValues.Min();
             MaxMinusMin = Max - Min;
-            Average = Values.Average();
-            StandardDeviation = this.CalculateStdDev(this.Values);
+            Average = NotNaNValues.Average();
+            StandardDeviation = this.CalculateStdDev(NotNaNValues);
             //Variance = Math.Pow(StandardDeviation, 2);
             CP = 0;
             CPK = 0;
@@ -260,7 +261,7 @@ namespace LogMonitor
             }
 
             uint fails = 0;
-            foreach (var value in this.Values)
+            foreach (var value in NotNaNValues)
             {
                 if ((value > UpperLimit) || (value < LowerLimit))
                 {
@@ -268,7 +269,7 @@ namespace LogMonitor
                 }
             }
             FailCount = fails;
-            CalculatePassRate();
+            PassRate = 1.0 - FailCount / NotNaNValues.Count;
         }
 
         /// <summary>
@@ -283,13 +284,6 @@ namespace LogMonitor
             this.DiResponseDetails.Add(this.DiResponseDetails.Count, dv);
         }
 
-        /// <summary>
-        /// Calculates pass rate of test
-        /// </summary>
-        private void CalculatePassRate()
-        {
-            PassRate = 1.0D - ((double)(FailCount + Exceptions.Count) / (double)(Values.Count + Exceptions.Count));
-        }
 
         /// <summary>
         /// Adds exception to list
@@ -298,7 +292,6 @@ namespace LogMonitor
         public void AddException(string exception)
         {
             this.Exceptions.Add(exception);
-            CalculatePassRate();
             //Form1.totalExceptions++;
         }
 
